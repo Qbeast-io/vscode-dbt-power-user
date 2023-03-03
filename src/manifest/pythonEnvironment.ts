@@ -111,7 +111,11 @@ export class PythonEnvironment implements Disposable {
         } catch (e) {
           console.error("Could not call environment api", e);
         }
-
+        // Append a new env 'JAVA_HOME=/opt/zulu8' to envVars
+        envVars = {
+          ...envVars,
+          JAVA_HOME: "/opt/zulu8",
+        };
         return envVars;
       },
     });
