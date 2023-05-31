@@ -101,7 +101,12 @@ export class RunModel {
       this.showCompiledSQL(fullPath);
     }
   }
-
+  generateSchemaYMLOnActiveWindow() {
+    const fullPath = window.activeTextEditor?.document.uri;
+    if (fullPath !== undefined) {
+      this.generateSchemaYML(fullPath);
+    }
+  }
   showRunSQLOnActiveWindow() {
     const fullPath = window.activeTextEditor?.document.uri;
     if (fullPath !== undefined) {
@@ -142,18 +147,25 @@ export class RunModel {
     this.dbtProjectContainer.showCompiledSQL(modelPath);
   }
 
+  generateSchemaYML(modelPath: Uri) {
+    const modelName = path.basename(modelPath.fsPath, ".sql");
+    this.dbtProjectContainer.generateSchemaYML(modelPath, modelName);
+  }
+
   showRunSQL(modelPath: Uri) {
     this.dbtProjectContainer.showRunSQL(modelPath);
   }
 
   createModelBasedonSourceConfig(params: GenerateModelFromSourceParams) {
     const project = this.dbtProjectContainer.findDBTProject(params.currentDoc);
+    const sourcePath = path.dirname(params.currentDoc.fsPath);
     if (project) {
       project.generateModel(
         params.sourceName,
         params.database,
         params.schema,
-        params.tableName
+        params.tableName,
+        sourcePath
       );
     } else {
       window.showErrorMessage(

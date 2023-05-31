@@ -8,6 +8,7 @@ Main features:
 
 - Generate models from your source definitions
 - Query result set visualization
+- Lineage of current model
 - Execute all or individual model tests
 - Go to the definition of any models, macros, sources and docs.
 - Autocompletion of models, macros, sources and docs
@@ -75,7 +76,7 @@ This way supports all Visual Code variable substitution patterns and is best pra
 The extension will read any vscode configurations in `.vscode/settings.json` and pass them to all operations of the extension:
 
 ```
-"terminal.integrated.env.[osx|windows|linux]: {
+"terminal.integrated.env.[osx|windows|linux]": {
     "DBT_PROFILES_DIR": "."
 }
 ```
@@ -92,11 +93,11 @@ Please make a PR if you find that you need to change `dbt.queryTemplate` for you
 
 #### `dbt.queryTemplate` for Oracle
 
-Change to `select * from ({query}) where ROWNUM <= {limit}`
+Change to `select * from ({query})\n where ROWNUM <= {limit}`
 
 #### `dbt.queryTemplate` for MS SQL
 
-Change to `{query} order by 1 OFFSET 0 ROWS FETCH FIRST {limit} ROWS ONLY`
+Change to `{query}\n order by 1 OFFSET 0 ROWS FETCH FIRST {limit} ROWS ONLY`
 
 Note that your query can't have an order by clause.
 
@@ -129,10 +130,19 @@ You can enable format on save for python by having the following values in your 
 
 ## Features at work
 
+### Lineage of current model
+
+![See the parents and children of your model](./media/images/lineage.png)
+
 ### Generate a model from your source definition
 
 ![Generate a model from your source definition](./media/images/generate-model-from-source.gif)
 
+You can select a file name template and prefix in the settings.
+
+### Generate a schema yml file from your model file
+
+![Generate a schema yml file from your model file](./media/images/generate-schema-yml.gif)
 ### Visualize the result set of your model (Use CMD+ENTER (mac) or CTRL+ENTER (win))
 
 ![Use ctrl+enter or cmd+enter to retrieve the result set of your model](./media/images/visualize-result-set.gif)

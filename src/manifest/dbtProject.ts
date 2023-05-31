@@ -51,6 +51,15 @@ interface CompilationResult {
   compiled_sql: string;
 }
 
+interface FileNameTemplateMap {
+  [key: string]: string;
+}
+
+interface ResolveReferenceResult {
+  database: string;
+  schema: string;
+}
+
 export class DBTProject implements Disposable {
   static DBT_PROJECT_FILE = "dbt_project.yml";
   static DBT_MODULES = ["dbt_modules", "dbt_packages"];
@@ -364,11 +373,72 @@ export class DBTProject implements Disposable {
     this.findModelInTargetfolder(modelPath, "run");
   }
 
+  createYMLContent(
+    columnsInRelation: { [key: string]: string }[],
+    modelName: string
+  ): string {
+    let yamlString = "version: 2\n\nmodels:\n";
+    yamlString += `  - name: ${modelName}\n    description: ""\n    columns:\n`;
+    for (const item of columnsInRelation) {
+      yamlString += `    - name: ${item.column}\n      description: ""\n`;
+    }
+    return yamlString;
+  }
+
+  async generateSchemaYML(modelPath: Uri, modelName: string) {
+    await this.blockUntilPythonBridgeIsInitalized();
+    if (!this.pythonBridgeInitialized) {
+      window.showErrorMessage(
+        "Could not execute query, because the Python bridge has not been initalized. If the issue persists, please open a Github issue."
+      );
+      throw Error("Could not initialize Python bridge");
+    }
+    try {
+      // Create filePath based on model location
+      const currentDir = path.dirname(modelPath.fsPath);
+      const location = path.join(currentDir, modelName + "_schema.yml");
+      if (!existsSync(location)) {
+        // Get database and schema
+        const refNode = (await this.python?.lock(
+          (python) => python!`to_dict(project.get_ref_node(${modelName}))`
+        )) as ResolveReferenceResult;
+        // Get columns
+        const columnsInRelation = (await this.python?.lock(
+          (python) =>
+            python!`to_dict(project.get_columns_in_relation(project.create_relation(${refNode.database}, ${refNode.schema}, ${modelName})))`
+        )) as any[];
+        // Generate yml file content
+        const fileContents = this.createYMLContent(
+          columnsInRelation,
+          modelName
+        );
+        writeFileSync(location, fileContents);
+        const doc = await workspace.openTextDocument(Uri.file(location));
+        window.showTextDocument(doc);
+      } else {
+        window.showErrorMessage(
+          `A file called ${modelName}_schema.yml already exists in ${currentDir}. If you want to generate the schema yml, please rename the other file or delete it if you want to generate the yml again.`
+        );
+      }
+    } catch (exc: any) {
+      if (exc instanceof PythonException) {
+        window.showErrorMessage(
+          "An error occured while trying to generate the schema yml " +
+            exc.exception.message
+        );
+      }
+      // Unknown error
+      window.showErrorMessage(exc);
+    }
+  }
+
   async generateModel(
     sourceName: string,
     database: string,
     schema: string,
-    tableName: string
+    tableName: string,
+    sourcePath: string,
+    tableIdentifier?: string
   ) {
     await this.blockUntilPythonBridgeIsInitalized();
     if (!this.pythonBridgeInitialized) {
@@ -378,12 +448,39 @@ export class DBTProject implements Disposable {
       throw Error("Could not initialize Python bridge");
     }
     try {
-      const modelPath = path.join(this.projectRoot.fsPath, this.sourcePaths[0]);
-      const location = path.join(modelPath, tableName + ".sql");
+      const prefix = workspace
+        .getConfiguration("dbt")
+        .get<string>("prefixGenerateModel", "base");
+
+      // Map setting to fileName
+      const fileNameTemplateMap: FileNameTemplateMap = {
+        "{prefix}_{sourceName}_{tableName}": `${prefix}_${sourceName}_${tableName}`,
+        "{prefix}_{sourceName}__{tableName}": `${prefix}_${sourceName}__${tableName}`,
+        "{prefix}_{tableName}": `${prefix}_${tableName}`,
+        "{tableName}": `${tableName}`,
+      };
+
+      // Default filename template
+      let fileName = `${prefix}_${sourceName}_${tableName}`;
+
+      const fileNameTemplate = workspace
+        .getConfiguration("dbt")
+        .get<string>(
+          "fileNameTemplateGenerateModel",
+          "{prefix}_{sourceName}_{tableName}"
+        );
+
+      // Parse setting to fileName
+      if (fileNameTemplate in fileNameTemplateMap) {
+        fileName = fileNameTemplateMap[fileNameTemplate];
+      }
+      // Create filePath based on source.yml location
+      const location = path.join(sourcePath, fileName + ".sql");
       if (!existsSync(location)) {
+        const _tableIdentifier = tableIdentifier ? tableIdentifier : tableName;
         const columnsInRelation = (await this.python?.lock(
           (python) =>
-            python!`to_dict(project.get_columns_in_relation(project.create_relation(${database}, ${schema}, ${tableName})))`
+            python!`to_dict(project.get_columns_in_relation(project.create_relation(${database}, ${schema}, ${_tableIdentifier})))`
         )) as any[];
         console.log(columnsInRelation);
 
@@ -405,7 +502,7 @@ select * from renamed
         window.showTextDocument(doc);
       } else {
         window.showErrorMessage(
-          `A model called ${tableName} already exists in ${modelPath}. If you want to generate the model, please rename the other model or delete it if you want to generate the model again.`
+          `A model called ${fileName} already exists in ${sourcePath}. If you want to generate the model, please rename the other model or delete it if you want to generate the model again.`
         );
       }
     } catch (exc: any) {
@@ -436,7 +533,7 @@ select * from renamed
       .getConfiguration("dbt")
       .get<string>(
         "queryTemplate",
-        "select * from ({query}) as query limit {limit}"
+        "select * from ({query}\n) as query limit {limit}"
       );
 
     const limitQuery = queryTemplate
